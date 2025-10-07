@@ -8,6 +8,7 @@
   --muted:#f6f8fb;
   --radius:16px;
   --shadow:0 10px 30px rgba(16,18,27,.08);
+  --focus: 0 0 0 3px color-mix(in oklab, var(--brand) 40%, white);
 }
 :root.dark{
   --bg:#0f1115;
@@ -17,12 +18,14 @@
   --line:#232838;
   --muted:#0b0e13;
   --shadow:0 18px 40px rgba(0,0,0,.45);
+  --focus: 0 0 0 3px color-mix(in oklab, var(--brand) 35%, black);
 }
 
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font:15px/1.6 ui-sans-serif,-apple-system,Segoe UI,Inter,Roboto,system-ui}
 a{color:inherit;text-decoration:none}
 button{font:inherit}
+img{display:block}
 
 .container{max-width:1100px;margin:0 auto;padding:0 20px}
 .spacer{flex:1}
@@ -34,10 +37,20 @@ button{font:inherit}
 .brand{font-weight:800;letter-spacing:-.01em}
 
 /* Buttons / Inputs */
-.btn{display:inline-flex;align-items:center;gap:10px;padding:10px 16px;border-radius:999px;border:1px solid var(--line);background:var(--card);cursor:pointer;transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease}
-.btn:hover{transform:translateY(-1px);box-shadow:var(--shadow);border-color:color-mix(in oklab, var(--brand) 26%, var(--line))}
+.btn{display:inline-flex;align-items:center;gap:10px;padding:10px 16px;border-radius:999px;border:1px solid var(--line);background:var(--card);cursor:pointer;
+  transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease, background .16s ease}
+.btn:hover{transform:translateY(-1.5px) scale(1.01);box-shadow:var(--shadow);border-color:color-mix(in oklab, var(--brand) 26%, var(--line))}
+.btn:active{transform:translateY(0)} 
 .btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
-.input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink)}
+.btn:focus-visible{outline:none;box-shadow:var(--focus)}
+
+.input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);transition:border-color .15s ease, box-shadow .15s ease}
+.input:focus{outline:none;border-color:color-mix(in oklab, var(--brand) 35%, var(--line));box-shadow:var(--focus)}
+
+/* Subtle link underline on hover */
+a.ghost-link{position:relative}
+a.ghost-link::after{content:"";position:absolute;left:0;right:0;bottom:-2px;height:1px;background:color-mix(in oklab, var(--brand) 40%, transparent);transform:scaleX(0);transform-origin:left;transition:transform .2s ease}
+a.ghost-link:hover::after{transform:scaleX(1)}
 
 /* Hero */
 .hero{padding:64px 0 36px}
@@ -46,29 +59,28 @@ button{font:inherit}
 .hero-sub{margin-top:10px;color:var(--ink-2);font-size:16px}
 .hero-actions{margin-top:18px;display:flex;gap:10px;flex-wrap:wrap}
 
-/* Showroom preview (right column) */
-.showroom{border:1px solid var(--line);background:var(--card);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow)}
-.preview-list{display:grid;gap:10px}
-.preview-item{border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--bg)}
-.preview-title{font-weight:700}
-.preview-meta{font-size:12px;color:var(--ink-2);margin-top:4px}
+/* Showroom card */
+.showroom{border:1px solid var(--line);background:var(--card);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);transform:translateZ(0)}
+.showroom:hover{box-shadow:0 14px 36px rgba(16,18,27,.12)}
 
-/* Section divider / Features */
+/* Section / Feature cards */
 .section{padding:44px 0;border-top:1px solid var(--line)}
 .section-title{font-weight:900;font-size:22px;letter-spacing:-.01em;margin-bottom:14px}
 .cards{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
-.card{border:1px solid var(--line);background:var(--card);border-radius:var(--radius);padding:16px;transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease}
-.card:hover{transform:translateY(-2px);box-shadow:var(--shadow);border-color:color-mix(in oklab, var(--brand) 22%, var(--line))}
+.card{border:1px solid var(--line);background:var(--card);border-radius:var(--radius);padding:16px;transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease}
+.card:hover{transform:translateY(-3px);box-shadow:var(--shadow);border-color:color-mix(in oklab, var(--brand) 22%, var(--line))}
+.card:focus-within{box-shadow:var(--focus)}
 .card-title{font-weight:800}
 .meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;color:var(--ink-2);font-size:12px}
-.pill{padding:4px 9px;border-radius:999px;border:1px solid var(--line)}
+.pill{padding:4px 9px;border-radius:999px;border:1px solid var(--line);background:color-mix(in oklab, var(--muted) 60%, transparent)}
 
-/* Toolbar (signed-in) */
+/* Toolbar */
 .toolbar{position:sticky;top:66px;z-index:30;background:color-mix(in oklab, var(--bg) 90%, transparent);border-bottom:1px solid var(--line)}
 .toolbar-inner{display:flex;gap:10px;align-items:center;padding:10px 0}
 
 /* Live S3 tiles */
-.tile{border:1px solid var(--line);border-radius:var(--radius);padding:16px;background:var(--card)}
+.tile{border:1px solid var(--line);border-radius:var(--radius);padding:16px;background:var(--card);transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease}
+.tile:hover{transform:translateY(-3px);box-shadow:var(--shadow);border-color:color-mix(in oklab, var(--brand) 22%, var(--line))}
 .tile-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .tile-title{font-weight:700}
 .badge{border:1px solid var(--line);border-radius:999px;padding:3px 8px;font-size:12px;color:var(--ink-2)}
