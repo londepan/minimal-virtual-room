@@ -5,6 +5,7 @@ import { Suspense } from "react";
 export const metadata: Metadata = {
   title: "Macias Plans Room",
   description: "Secure TxDOT Plans Portal for Macias Specialty Contracting",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000"),
   icons: {
     icon: "/favicon.png",
     shortcut: "/favicon.png",
