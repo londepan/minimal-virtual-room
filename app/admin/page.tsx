@@ -1,188 +1,149 @@
-'use client'
-import { useState } from 'react'
+"use client";
 
-type PlanIndexItem = {
-  id: string
-  title: string
-  district: string
-  csj: string
-  highway: string
-  letDate: string
-  version: string
-  size: string
-  tags: string[]
-  s3Key: string
-  createdAt: string
-}
+import { useState } from "react";
 
-export default function Admin(){
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('') // NEW: simple pass
-  const [folder, setFolder] = useState('') // e.g. Austin/0015-13-200
-  const [file, setFile] = useState<File|null>(null)
+export default function AdminPage() {
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
+  const [folder, setFolder] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [status, setStatus] = useState("");
 
-  // metadata
-  const [title, setTitle] = useState('New Plan Set')
-  const [district, setDistrict] = useState('Austin')
-  const [csj, setCsj] = useState('0015-13-200')
-  const [highway, setHighway] = useState('IH 35')
-  const [letDate, setLetDate] = useState<string>(new Date().toISOString().slice(0,10))
-  const [version, setVersion] = useState('IFB v1')
-  const [tags, setTags] = useState('Roadway, Structures')
+  const upload = async () => {
+    if (!file) return;
+    setStatus("");
 
-  const [status, setStatus] = useState('')
-  const emailOk = email.toLowerCase().endsWith('@maciasspecialty.com')
-  const can = emailOk && !!file && password.length > 0
+    try {
+      const contentType = file.type || "application/pdf";
 
-const upload = async () => {
-  if (!file) return;
+      // 1) Ask API for a pre-signed PUT URL
+      setStatus("Requesting upload URL…");
+      const upRes = await fetch("/api/files/upload-url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-email": email,
+          "x-admin-pass": pass,
+        },
+        body: JSON.stringify({
+          folder,
+          filename: file.name,
+          contentType, // MUST match the header we send to S3 below
+        }),
+      });
 
-  const contentType = file.type || "application/pdf"; // what the browser will actually send
-
-  setStatus("Requesting upload URL…");
-  const upRes = await fetch("/api/files/upload-url", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-user-email": email,
-      "x-admin-pass": pass, // if you're reading pass from a field; otherwise remove
-    } as any,
-    body: JSON.stringify({
-      folder: "",                  // or your chosen folder
-      filename: file.name,
-      contentType,                 // <- send it to server so signature matches
-    }),
-  });
-
-  if (!upRes.ok) {
-    const txt = await upRes.text();
-    setStatus(`Request failed: ${upRes.status} ${txt}`);
-    return;
-  }
-
-  const { url } = await upRes.json();
-
-  setStatus("Uploading to S3…");
-  const put = await fetch(url, {
-    method: "PUT",
-    // Send EXACTLY the same Content-Type that was used to sign:
-    headers: { "Content-Type": contentType },
-    body: file,
-    // No credentials, no other headers — pre-signed URL already authorizes the request.
-  });
-
-  if (!put.ok) {
-    const errText = await put.text().catch(() => "");
-    setStatus(`Upload failed: ${put.status} ${errText || ""}`.trim());
-    return;
-  }
-
-  setStatus("Uploaded ✓");
-};
-
-
-      // compute size label
-      const mb = Math.max(1, Math.round((file.size || 0) / (1024*1024)))
-      const sizeLabel = `${mb} MB`
-
-      // register metadata
-      setStatus('Registering metadata…')
-      const item: PlanIndexItem = {
-        id: crypto.randomUUID(),
-        title, district, csj, highway, letDate, version,
-        size: sizeLabel,
-        tags: tags.split(',').map(t=>t.trim()).filter(Boolean),
-        s3Key: key,
-        createdAt: new Date().toISOString(),
+      if (!upRes.ok) {
+        const txt = await upRes.text().catch(() => "");
+        setStatus(`Request failed: ${upRes.status} ${txt}`);
+        return;
       }
 
-      const reg = await fetch('/api/files/register', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'x-user-email': email,
-          'x-admin-pass': password, // NEW header
-        },
-        body: JSON.stringify(item)
-      })
-      if(!reg.ok){ setStatus(`Register failed (${reg.status})`); return }
+      const { url, key } = await upRes.json();
 
-      setStatus(`✅ Uploaded & registered: ${key}`)
-    }catch(err:any){
-      setStatus(`Error: ${err?.message || err}`)
+      // 2) Upload the file to S3 using the signed URL
+      setStatus("Uploading to S3…");
+      const put = await fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": contentType },
+        body: file,
+      });
+
+      if (!put.ok) {
+        const errText = await put.text().catch(() => "");
+        setStatus(`Upload failed: ${put.status} ${errText || ""}`.trim());
+        return;
+      }
+
+      // 3) (Optional) Register metadata so it appears for users immediately
+      setStatus("Registering metadata…");
+      const meta = {
+        id: crypto.randomUUID(),
+        title: file.name.replace(/\.[Pp][Dd][Ff]$/, ""),
+        district: "",
+        csj: "",
+        highway: "",
+        letDate: new Date().toISOString().slice(0, 10),
+        version: "v1",
+        size: `${Math.ceil(file.size / 1024 / 1024)} MB`,
+        tags: [],
+        s3Key: key,
+        createdAt: new Date().toISOString(),
+      };
+
+      const reg = await fetch("/api/files/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-email": email,
+          "x-admin-pass": pass,
+        },
+        body: JSON.stringify(meta),
+      });
+
+      if (!reg.ok) {
+        setStatus(`Register failed (${reg.status})`);
+        return;
+      }
+
+      setStatus(`✅ Uploaded & registered: ${key}`);
+      // Optional: reset form
+      // setFolder(""); setFile(null);
+    } catch (err: any) {
+      setStatus(`Error: ${err?.message || String(err)}`);
     }
-  }
+  };
 
   return (
-    <>
-      <div className="header">
-        <div className="header-inner container">
-          <b>Admin — Upload Plan Set</b>
-          <div className="spacer" />
-          <a className="btn" href="/">Back to Plans</a>
+    <div className="min-h-screen bg-neutral-50">
+      <div className="max-w-3xl mx-auto px-6 py-10">
+        <h1 className="text-2xl font-bold">Admin — Upload Plans</h1>
+        <p className="text-sm text-neutral-500 mt-1">
+          Use your @maciasspecialty.com email and the admin password to upload PDFs directly to S3.
+        </p>
+
+        <div className="mt-6 grid gap-3">
+          <input
+            className="border rounded-md px-3 py-2"
+            placeholder="Your work email (@maciasspecialty.com)"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <input
+            className="border rounded-md px-3 py-2"
+            placeholder="Admin password"
+            type="password"
+            value={pass}
+            onChange={(e) => setPass(e.target.value)}
+          />
+          <input
+            className="border rounded-md px-3 py-2"
+            placeholder="Folder (optional, e.g. Austin/IH35)"
+            value={folder}
+            onChange={(e) => setFolder(e.target.value)}
+          />
+          <input
+            className="border rounded-md px-3 py-2"
+            type="file"
+            accept="application/pdf"
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+          />
+
+          <button
+            onClick={upload}
+            disabled={!file || !email || !pass}
+            className="inline-flex items-center justify-center rounded-md bg-[#f36f21] px-4 py-2 font-medium text-white shadow hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          >
+            Upload
+          </button>
+
+          <div className="text-sm text-neutral-600 min-h-[1.5rem]">{status}</div>
+
+          <div className="text-xs text-neutral-400">
+            Tip: If you see “Failed to fetch” on upload, verify S3 CORS and that the signed URL doesn’t contain
+            any “%0D%0A” (line breaks) in folder/filename.
+          </div>
         </div>
       </div>
-
-      <div className="container" style={{padding:'20px 0'}}>
-        <div className="card" tabIndex={0}>
-          <div className="cards" style={{gridTemplateColumns:'1fr 1fr'}}>
-            <div>
-              <div style={{fontSize:12, color:'var(--ink-2)', marginBottom:6}}>Your Macias email</div>
-              <input className="input" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@maciasspecialty.com" />
-            </div>
-            <div>
-              <div style={{fontSize:12, color:'var(--ink-2)', marginBottom:6}}>Admin password</div>
-              <input className="input" type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" />
-            </div>
-            <div>
-              <div style={{fontSize:12, color:'var(--ink-2)', marginBottom:6}}>Optional folder (e.g. Austin/0015-13-200)</div>
-              <input className="input" value={folder} onChange={e=>setFolder(e.target.value)} placeholder="Austin/0015-13-200" />
-            </div>
-            <div>
-              <div style={{fontSize:12, color:'var(--ink-2)', marginBottom:6}}>PDF file</div>
-              <input className="input" type="file" accept="application/pdf" onChange={e=>setFile(e.target.files?.[0]||null)} />
-            </div>
-          </div>
-
-          {/* Metadata */}
-          <div className="cards" style={{marginTop:12, gridTemplateColumns:'1fr 1fr'}}>
-            <div>
-              <div style={{fontSize:12, color:'var(--ink-2)', marginBottom:6}}>Title</div>
-              <input className="input" value={title} onChange={e=>setTitle(e.target.value)} />
-            </div>
-            <div>
-              <div style={{fontSize:12, color:'var(--ink-2)', marginBottom:6}}>District</div>
-              <input className="input" value={district} onChange={e=>setDistrict(e.target.value)} />
-            </div>
-            <div>
-              <div style={{fontSize:12, color:'var(--ink-2)', marginBottom:6}}>CSJ</div>
-              <input className="input" value={csj} onChange={e=>setCsj(e.target.value)} />
-            </div>
-            <div>
-              <div style={{fontSize:12, color:'var(--ink-2)', marginBottom:6}}>Highway</div>
-              <input className="input" value={highway} onChange={e=>setHighway(e.target.value)} />
-            </div>
-            <div>
-              <div style={{fontSize:12, color:'var(--ink-2)', marginBottom:6}}>Let date</div>
-              <input className="input" type="date" value={letDate} onChange={e=>setLetDate(e.target.value)} />
-            </div>
-            <div>
-              <div style={{fontSize:12, color:'var(--ink-2)', marginBottom:6}}>Version</div>
-              <input className="input" value={version} onChange={e=>setVersion(e.target.value)} />
-            </div>
-          </div>
-          <div style={{marginTop:12}}>
-            <div style={{fontSize:12, color:'var(--ink-2)', marginBottom:6}}>Tags (comma separated)</div>
-            <input className="input" value={tags} onChange={e=>setTags(e.target.value)} />
-          </div>
-
-          <div style={{marginTop:14, display:'flex', gap:10, alignItems:'center'}}>
-            <button className="btn primary" disabled={!can} onClick={upload}>Upload & Register</button>
-            {!emailOk && <span style={{fontSize:12, color:'var(--ink-2)'}}>Must be a <code>@maciasspecialty.com</code> email.</span>}
-          </div>
-          <div style={{fontSize:12, color:'var(--ink-2)', marginTop:10}}>{status}</div>
-        </div>
-      </div>
-    </>
-  )
+    </div>
+  );
 }
