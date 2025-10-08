@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 
 export default function AdminPage() {
   const [email, setEmail] = useState("");
@@ -9,14 +9,17 @@ export default function AdminPage() {
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState("");
 
-  const upload = async () => {
+  const contentType = useMemo(
+    () => (file?.type ? file.type : "application/pdf"),
+    [file]
+  );
+
+  async function upload() {
     if (!file) return;
     setStatus("");
 
     try {
-      const contentType = file.type || "application/pdf";
-
-      // 1) Ask API for a pre-signed PUT URL
+      // 1) Get signed PUT URL (must include the exact Content-Type we’ll send)
       setStatus("Requesting upload URL…");
       const upRes = await fetch("/api/files/upload-url", {
         method: "POST",
@@ -28,19 +31,19 @@ export default function AdminPage() {
         body: JSON.stringify({
           folder,
           filename: file.name,
-          contentType, // MUST match the header we send to S3 below
+          contentType,
         }),
       });
 
       if (!upRes.ok) {
         const txt = await upRes.text().catch(() => "");
-        setStatus(`Request failed: ${upRes.status} ${txt}`);
+        setStatus(`Request failed: ${upRes.status} ${txt}`.trim());
         return;
       }
 
       const { url, key } = await upRes.json();
 
-      // 2) Upload the file to S3 using the signed URL
+      // 2) Upload file to S3 with the SAME Content-Type as signed
       setStatus("Uploading to S3…");
       const put = await fetch(url, {
         method: "PUT",
@@ -54,7 +57,7 @@ export default function AdminPage() {
         return;
       }
 
-      // 3) (Optional) Register metadata so it appears for users immediately
+      // 3) (Optional) register so it shows up immediately on the homepage
       setStatus("Registering metadata…");
       const meta = {
         id: crypto.randomUUID(),
@@ -64,7 +67,7 @@ export default function AdminPage() {
         highway: "",
         letDate: new Date().toISOString().slice(0, 10),
         version: "v1",
-        size: `${Math.ceil(file.size / 1024 / 1024)} MB`,
+        size: `${Math.max(1, Math.ceil((file.size || 0) / 1024 / 1024))} MB`,
         tags: [],
         s3Key: key,
         createdAt: new Date().toISOString(),
@@ -81,69 +84,123 @@ export default function AdminPage() {
       });
 
       if (!reg.ok) {
-        setStatus(`Register failed (${reg.status})`);
+        setStatus(`Uploaded ✓ but register failed (${reg.status})`);
         return;
       }
 
       setStatus(`✅ Uploaded & registered: ${key}`);
-      // Optional: reset form
+      // Optional: reset
       // setFolder(""); setFile(null);
     } catch (err: any) {
       setStatus(`Error: ${err?.message || String(err)}`);
     }
-  };
+  }
+
+  const disabled = !file || !email || !pass;
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      <div className="max-w-3xl mx-auto px-6 py-10">
-        <h1 className="text-2xl font-bold">Admin — Upload Plans</h1>
+      <header className="border-b bg-white">
+        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <img
+              src="/favicon.png"
+              alt="Macias"
+              className="h-8 w-8 rounded-lg shadow-sm"
+            />
+            <div className="font-semibold tracking-tight">Macias Admin</div>
+          </div>
+          <a
+            href="/"
+            className="text-sm text-neutral-600 hover:text-black transition"
+          >
+            ← Back to Plans
+          </a>
+        </div>
+      </header>
+
+      <main className="max-w-5xl mx-auto px-6 py-10">
+        <h1 className="text-2xl font-bold">Upload Plans</h1>
         <p className="text-sm text-neutral-500 mt-1">
-          Use your @maciasspecialty.com email and the admin password to upload PDFs directly to S3.
+          Use your <span className="font-medium">@maciasspecialty.com</span> email and admin password.
         </p>
 
-        <div className="mt-6 grid gap-3">
-          <input
-            className="border rounded-md px-3 py-2"
-            placeholder="Your work email (@maciasspecialty.com)"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <input
-            className="border rounded-md px-3 py-2"
-            placeholder="Admin password"
-            type="password"
-            value={pass}
-            onChange={(e) => setPass(e.target.value)}
-          />
-          <input
-            className="border rounded-md px-3 py-2"
-            placeholder="Folder (optional, e.g. Austin/IH35)"
-            value={folder}
-            onChange={(e) => setFolder(e.target.value)}
-          />
-          <input
-            className="border rounded-md px-3 py-2"
-            type="file"
-            accept="application/pdf"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
-          />
+        <div className="mt-6 grid gap-4 max-w-xl">
+          <div>
+            <label className="block text-sm font-medium mb-1">Email</label>
+            <input
+              className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[#f36f21]/30 focus:border-[#f36f21] transition"
+              placeholder="lm@maciasspecialty.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Admin password</label>
+            <input
+              className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[#f36f21]/30 focus:border-[#f36f21] transition"
+              type="password"
+              placeholder="••••••"
+              value={pass}
+              onChange={(e) => setPass(e.target.value)}
+            />
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Folder (optional)
+              </label>
+              <input
+                className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[#f36f21]/30 focus:border-[#f36f21] transition"
+                placeholder="e.g. Austin/IH35"
+                value={folder}
+                onChange={(e) => setFolder(e.target.value)}
+              />
+              <p className="text-xs text-neutral-500 mt-1">
+                Avoid line breaks; use simple path like <code>District/Highway</code>.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">PDF</label>
+              <input
+                className="w-full border rounded-lg px-3 py-2 file:mr-4 file:rounded-md file:border-0 file:bg-neutral-100 file:px-3 file:py-2 hover:file:bg-neutral-200 transition"
+                type="file"
+                accept="application/pdf"
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
+              />
+              <p className="text-xs text-neutral-500 mt-1">
+                Detected type: <code>{contentType}</code>
+              </p>
+            </div>
+          </div>
 
           <button
             onClick={upload}
-            disabled={!file || !email || !pass}
-            className="inline-flex items-center justify-center rounded-md bg-[#f36f21] px-4 py-2 font-medium text-white shadow hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            disabled={disabled}
+            className="group inline-flex items-center justify-center rounded-lg bg-[#f36f21] px-4 py-2 font-medium text-white shadow-sm hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
-            Upload
+            <span className="mr-1">Upload</span>
+            <svg
+              className="h-4 w-4 transform group-hover:-translate-y-0.5 transition"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path d="M3 15a1 1 0 011-1h3v-3H5l5-5 5 5h-2v3h3a1 1 0 011 1v2a1 1 0 01-1 
+                1H4a1 1 0 01-1-1v-2z" />
+            </svg>
           </button>
 
-          <div className="text-sm text-neutral-600 min-h-[1.5rem]">{status}</div>
+          <div className="min-h-[24px] text-sm text-neutral-700">{status}</div>
 
           <div className="text-xs text-neutral-400">
-            Tip: If you see “Failed to fetch” on upload, verify S3 CORS and that the signed URL doesn’t contain
-            any “%0D%0A” (line breaks) in folder/filename.
+            If you see <em>Failed to fetch</em>, it’s usually CORS or a header mismatch. Make sure your S3
+            CORS is saved and the signed URL contains no <code>%0D%0A</code>.
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

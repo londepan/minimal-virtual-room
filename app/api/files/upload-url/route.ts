@@ -12,7 +12,7 @@ function isAdmin(req: Request) {
 }
 
 function cleanSegment(s: string) {
-  // remove CR/LF, trim, collapse slashes, strip leading/trailing slashes
+  // strip CR/LF, trim spaces, collapse slashes, strip leading/trailing slashes
   return s.replace(/[\r\n]+/g, "").replace(/\s+/g, " ").replace(/\/{2,}/g, "/").replace(/^\/+|\/+$/g, "");
 }
 
