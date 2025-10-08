@@ -34,25 +34,52 @@ export default function Admin(){
   const emailOk = email.toLowerCase().endsWith('@maciasspecialty.com')
   const can = emailOk && !!file && password.length > 0
 
-  const upload = async ()=>{
-    try{
-      if(!file) return
-      setStatus('Requesting upload URL…')
-      const r = await fetch('/api/files/upload-url',{
-        method:'POST',
-        headers:{ 
-          'Content-Type':'application/json',
-          'x-user-email': email,
-          'x-admin-pass': password, // NEW header
-        },
-        body: JSON.stringify({ folder, filename: file.name })
-      })
-      if(!r.ok){ setStatus(`Denied (${r.status})`); return }
-      const { url, key } = await r.json()
+const upload = async () => {
+  if (!file) return;
 
-      setStatus('Uploading PDF to S3…')
-      const put = await fetch(url, { method:'PUT', body: file, headers:{ 'Content-Type': file.type || 'application/pdf' }})
-      if(!put.ok){ setStatus(`S3 PUT failed (${put.status})`); return }
+  const contentType = file.type || "application/pdf"; // what the browser will actually send
+
+  setStatus("Requesting upload URL…");
+  const upRes = await fetch("/api/files/upload-url", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-user-email": email,
+      "x-admin-pass": pass, // if you're reading pass from a field; otherwise remove
+    } as any,
+    body: JSON.stringify({
+      folder: "",                  // or your chosen folder
+      filename: file.name,
+      contentType,                 // <- send it to server so signature matches
+    }),
+  });
+
+  if (!upRes.ok) {
+    const txt = await upRes.text();
+    setStatus(`Request failed: ${upRes.status} ${txt}`);
+    return;
+  }
+
+  const { url } = await upRes.json();
+
+  setStatus("Uploading to S3…");
+  const put = await fetch(url, {
+    method: "PUT",
+    // Send EXACTLY the same Content-Type that was used to sign:
+    headers: { "Content-Type": contentType },
+    body: file,
+    // No credentials, no other headers — pre-signed URL already authorizes the request.
+  });
+
+  if (!put.ok) {
+    const errText = await put.text().catch(() => "");
+    setStatus(`Upload failed: ${put.status} ${errText || ""}`.trim());
+    return;
+  }
+
+  setStatus("Uploaded ✓");
+};
+
 
       // compute size label
       const mb = Math.max(1, Math.round((file.size || 0) / (1024*1024)))
