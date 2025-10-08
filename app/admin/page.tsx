@@ -3,10 +3,10 @@
 import { useMemo, useRef, useState } from "react";
 
 /**
- * Macias Admin (passwordless, domain-gated)
- * Visual style matches landing page: warm gradient, thin brand stripe, glass card, subtle hover.
- * Upload flow: /api/files/upload-url -> S3 PUT -> /api/files/register
- * CORS-safe: only sends Content-Type on PUT; sanitizes "folder" to strip CR/LF & backslashes.
+ * Macias Plans Room — Admin
+ * - Visual style matches landing page (brand orange stripe, warm background gradient, glass card)
+ * - Passwordless: server validates x-user-email endsWith "@maciasspecialty.com"
+ * - CORS-safe upload: PUT only sets Content-Type; strips CR/LF from Folder
  */
 
 export default function AdminPage() {
@@ -25,13 +25,9 @@ export default function AdminPage() {
 
   const disabled = !file || !email || busy;
 
-  // ------- helpers -------
   function sanitizeFolder(raw: string) {
-    // remove CR/LF that cause `%0D%0A` in signed URLs and break CORS
     const noNewlines = (raw || "").replace(/[\r\n]/g, "");
-    // normalize slashes
     const normalized = noNewlines.replace(/\\/g, "/").replace(/\/+/g, "/");
-    // trim leading / trailing slashes
     return normalized.replace(/^\/+/, "").replace(/\/+$/, "");
   }
 
@@ -41,21 +37,19 @@ export default function AdminPage() {
     setStatus("");
 
     try {
-      // 1) Ask Next API to sign a PUT for S3
       const safeFolder = sanitizeFolder(folder);
-
       setStatus("Requesting upload URL…");
+
       const upRes = await fetch("/api/files/upload-url", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          // Server checks this endsWith @maciasspecialty.com (no password needed)
           "x-user-email": email.trim().toLowerCase(),
         },
         body: JSON.stringify({
           folder: safeFolder,
           filename: file.name,
-          contentType, // must match the actual PUT Content-Type
+          contentType, // must match the PUT below
         }),
       });
 
@@ -66,25 +60,20 @@ export default function AdminPage() {
 
       const { url, key } = (await upRes.json()) as { url: string; key: string };
 
-      // 2) PUT the file to S3 — IMPORTANT: only set Content-Type (avoid custom headers that break CORS)
       setStatus("Uploading to S3…");
       const put = await fetch(url, {
         method: "PUT",
         body: file,
-        headers: { "Content-Type": contentType },
+        headers: { "Content-Type": contentType }, // only header S3 CORS needs
       });
 
       if (!put.ok) {
         const txt = await put.text().catch(() => "");
-        // Some browsers hide body on CORS fail; expose a helpful hint
         throw new Error(
-          `S3 PUT failed (${put.status}). ${
-            txt || "If this is a CORS error, fix S3 CORS & remove newlines from Folder."
-          }`
+          `S3 PUT failed (${put.status}). ${txt || "Likely CORS or a newline in Folder."}`
         );
       }
 
-      // 3) Register metadata (so the file can appear in tiles immediately)
       setStatus("Registering metadata…");
       const meta = {
         id: crypto.randomUUID(),
@@ -116,26 +105,19 @@ export default function AdminPage() {
 
       setStatus(
         <span className="inline-flex items-center gap-2 text-green-700">
-          <span className="inline-block h-2 w-2 rounded-full bg-green-600" />
-          Uploaded & registered — {key}
+          <Dot className="bg-green-600" /> Uploaded & registered
         </span>
       );
 
       // Optional reset
       // setFolder(""); setFile(null); if (inputRef.current) inputRef.current.value = "";
     } catch (e: any) {
-      // Improve surfacing “TypeError: Failed to fetch” with guidance
+      const msg = e?.message || String(e);
       const hint =
-        (e?.message || "").includes("Failed to fetch") ||
-        (e?.message || "").toLowerCase().includes("network")
-          ? " This is usually S3 CORS or a newline in Folder. See notes below."
+        msg.includes("Failed to fetch") || msg.toLowerCase().includes("network")
+          ? " (Check S3 CORS; ensure Folder has no hidden line breaks.)"
           : "";
-      setStatus(
-        <span className="text-red-700">
-          Error: {e?.message || String(e)}
-          {hint}
-        </span>
-      );
+      setStatus(<span className="text-red-700">Error: {msg}{hint}</span>);
     } finally {
       setBusy(false);
     }
@@ -152,20 +134,28 @@ export default function AdminPage() {
           <img src="/favicon.png" alt="Macias" className="h-9 w-9 rounded-md shadow-sm" />
           <div className="font-semibold tracking-tight">Macias Plans Room · Admin</div>
         </div>
-        <a
-          href="/"
-          className="text-sm text-neutral-600 hover:text-neutral-900 transition underline-offset-4 hover:underline"
-        >
-          Back to landing
-        </a>
+        <nav className="flex items-center gap-3">
+          <a
+            href="/"
+            className="text-sm text-neutral-600 hover:text-neutral-900 transition underline-offset-4 hover:underline"
+          >
+            Landing
+          </a>
+          <a
+            href="/"
+            className="rounded-lg border px-3 py-1.5 text-sm text-neutral-700 hover:shadow-sm hover:-translate-y-0.5 transition"
+          >
+            View Plans
+          </a>
+        </nav>
       </header>
 
-      {/* Hero */}
+      {/* Hero copy */}
       <section className="mx-auto max-w-6xl px-6 pb-2">
         <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">Upload TxDOT PDFs</h1>
         <p className="mt-2 text-neutral-600 max-w-2xl">
           Use your <span className="font-medium">@maciasspecialty.com</span> email. Files upload to S3 and are
-          immediately available to your subcontractors.
+          immediately visible to subcontractors.
         </p>
       </section>
 
@@ -180,7 +170,7 @@ export default function AdminPage() {
           </div>
 
           <div className="px-6 md:px-8 py-6 grid gap-8 md:grid-cols-2">
-            {/* Left column */}
+            {/* Left column: form */}
             <div className="grid gap-4">
               <Input
                 label="Work Email"
@@ -219,7 +209,7 @@ export default function AdminPage() {
               <button
                 onClick={upload}
                 disabled={disabled}
-                className="mt-2 inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition"
+                className="mt-2 inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition will-change-transform"
                 style={{ backgroundColor: "#f36f21" }}
                 onMouseEnter={(e) => (e.currentTarget.style.filter = "brightness(1.07)")}
                 onMouseLeave={(e) => (e.currentTarget.style.filter = "none")}
@@ -236,7 +226,7 @@ export default function AdminPage() {
               <div className="min-h-[24px] text-sm">{status}</div>
             </div>
 
-            {/* Right column */}
+            {/* Right column: info cards */}
             <aside className="grid gap-3">
               <Card title="Selected file">
                 {file ? (
@@ -253,7 +243,7 @@ export default function AdminPage() {
 
               <Card title="Tips">
                 <ul className="text-sm text-neutral-700 leading-6 list-disc pl-5">
-                  <li>Folder **must not** contain line breaks.</li>
+                  <li>Folder must not contain line breaks.</li>
                   <li>S3 bucket CORS must allow <code>PUT</code>, <code>GET</code>, <code>HEAD</code>.</li>
                   <li>
                     The <code>Content-Type</code> we sign is the <code>Content-Type</code> we PUT (
@@ -265,6 +255,14 @@ export default function AdminPage() {
           </div>
         </div>
       </main>
+
+      {/* Footer bar */}
+      <footer className="mx-auto max-w-6xl px-6 pb-10 text-xs text-neutral-500">
+        <div className="flex items-center gap-2">
+          <Dot className="bg-[#f36f21]" />
+          Macias Specialty Contracting — Admin
+        </div>
+      </footer>
     </div>
   );
 }
@@ -323,4 +321,8 @@ function Spinner() {
       />
     </svg>
   );
+}
+
+function Dot({ className = "" }: { className?: string }) {
+  return <span className={`inline-block h-2 w-2 rounded-full ${className}`} />;
 }
