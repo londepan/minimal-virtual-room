@@ -1,31 +1,40 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef } from "react";
 
 /**
- * Macias Admin — classic minimal card (like the earlier version)
- * - Brand color: #f36f21
- * - Soft glass background, rounded-xl, shadow, subtle hovers
- * - Exact upload flow preserved (signed URL -> PUT to S3 -> register)
+ * Macias Admin — refined minimal UI
+ * - Brand: #f36f21
+ * - Glass card, rounded-xl, soft shadow
+ * - Subtle hovers, progress bar, file preview
+ * - Flow: POST /api/files/upload-url -> PUT S3 -> POST /api/files/register
  */
+
 export default function AdminPage() {
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
   const [folder, setFolder] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState("");
+  const [progress, setProgress] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   const contentType = useMemo(
     () => (file?.type ? file.type : "application/pdf"),
     [file]
   );
 
+  const disabled = !file || !email || !pass || busy;
+
   async function upload() {
     if (!file) return;
     setStatus("");
+    setProgress(null);
+    setBusy(true);
 
     try {
-      // 1) Signed URL
+      // 1) Ask for signed URL
       setStatus("Requesting upload URL…");
       const upRes = await fetch("/api/files/upload-url", {
         method: "POST",
@@ -34,30 +43,25 @@ export default function AdminPage() {
           "x-user-email": email,
           "x-admin-pass": pass,
         },
-        body: JSON.stringify({ folder, filename: file.name, contentType }),
+        body: JSON.stringify({
+          folder,
+          filename: file.name,
+          contentType, // must match PUT
+        }),
       });
 
       if (!upRes.ok) {
         const txt = await upRes.text().catch(() => "");
-        setStatus(`Request failed: ${upRes.status} ${txt}`.trim());
-        return;
+        throw new Error(`Upload URL failed: ${upRes.status} ${txt}`);
       }
+
       const { url, key } = (await upRes.json()) as { url: string; key: string };
 
-      // 2) PUT to S3 with SAME content-type
+      // 2) PUT to S3 (track progress with XHR for better UX)
       setStatus("Uploading to S3…");
-      const put = await fetch(url, {
-        method: "PUT",
-        headers: { "Content-Type": contentType },
-        body: file,
-      });
-      if (!put.ok) {
-        const errText = await put.text().catch(() => "");
-        setStatus(`Upload failed: ${put.status} ${errText || ""}`.trim());
-        return;
-      }
+      await putWithProgress(url, file, contentType, (p) => setProgress(p));
 
-      // 3) Register so it shows up right away
+      // 3) Register metadata so it appears immediately
       setStatus("Registering metadata…");
       const meta = {
         id: crypto.randomUUID(),
@@ -84,29 +88,35 @@ export default function AdminPage() {
       });
 
       if (!reg.ok) {
-        setStatus(`Uploaded ✓ but register failed (${reg.status})`);
-        return;
+        throw new Error(`Uploaded ✓ but register failed (${reg.status})`);
       }
 
-      setStatus(`✅ Uploaded & registered: ${key}`);
+      setStatus("✅ Uploaded & registered");
+      // Optional reset:
+      // setFolder(""); setFile(null); inputRef.current?.value && (inputRef.current.value = "");
     } catch (err: any) {
       setStatus(`Error: ${err?.message || String(err)}`);
+    } finally {
+      setBusy(false);
+      setProgress(null);
     }
   }
 
-  const disabled = !file || !email || !pass;
-
   return (
-    <div className="min-h-screen bg-[radial-gradient(1000px_600px_at_50%_-20%,#ffe7d7_0%,transparent_60%),linear-gradient(180deg,#fafafa,white)]">
-      {/* Top bar accent */}
+    <div className="min-h-screen bg-[radial-gradient(1200px_700px_at_50%_-10%,#ffe7d7_0%,transparent_60%),linear-gradient(180deg,#fafafa,white)] text-neutral-900">
+      {/* Top brand bar */}
       <div className="h-1 w-full" style={{ backgroundColor: "#f36f21" }} />
 
-      {/* Header (slim, balanced) */}
-      <header className="sticky top-0 z-10 backdrop-blur supports-[backdrop-filter]:bg-white/70 bg-white/80 border-b">
-        <div className="mx-auto max-w-5xl px-5 py-3 flex items-center justify-between">
+      {/* Header */}
+      <header className="sticky top-0 z-10 bg-white/80 backdrop-blur border-b">
+        <div className="mx-auto max-w-6xl px-5 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img src="/favicon.png" alt="Macias" className="h-7 w-7 rounded-md shadow-sm" />
-            <span className="text-sm font-semibold tracking-tight">Macias Admin</span>
+            <img
+              src="/favicon.png"
+              alt="Macias"
+              className="h-8 w-8 rounded-md shadow-sm"
+            />
+            <div className="text-sm font-semibold tracking-tight">Macias Admin</div>
           </div>
           <a
             href="/"
@@ -117,41 +127,48 @@ export default function AdminPage() {
         </div>
       </header>
 
-      {/* Centered card */}
-      <main className="mx-auto max-w-5xl px-5 py-10">
-        <div className="mx-auto max-w-xl">
-          <div className="group rounded-2xl border border-neutral-200/70 bg-white/80 backdrop-blur shadow-[0_10px_30px_rgba(0,0,0,0.06)] transition">
-            <div className="px-6 sm:px-8 py-6 border-b bg-white/60">
+      {/* Main */}
+      <main className="mx-auto max-w-6xl px-5 py-10">
+        <div className="grid gap-8 md:grid-cols-2">
+          {/* Card: Upload */}
+          <section className="group rounded-2xl border border-neutral-200/70 bg-white/80 backdrop-blur shadow-[0_12px_30px_rgba(0,0,0,0.06)] overflow-hidden transition">
+            <div className="px-6 md:px-8 py-6 border-b bg-white/60">
               <h1 className="text-xl font-semibold tracking-tight">Upload Plans (PDF)</h1>
               <p className="text-xs text-neutral-500 mt-1">
-                Sign in with your <span className="font-medium">@maciasspecialty.com</span> email and admin password.
+                Use your <span className="font-medium">@maciasspecialty.com</span> email and the admin password.
               </p>
             </div>
 
-            <div className="px-6 sm:px-8 py-6 grid gap-4">
+            <div className="px-6 md:px-8 py-6 grid gap-4">
               <LabeledInput
-                label="Email"
-                placeholder="lm@maciasspecialty.com"
+                label="Work Email"
+                placeholder="you@maciasspecialty.com"
                 value={email}
                 onChange={setEmail}
               />
               <LabeledInput
-                label="Admin password"
+                label="Admin Password"
                 placeholder="••••••"
                 type="password"
                 value={pass}
                 onChange={setPass}
               />
               <LabeledInput
-                label={<>Folder <span className="text-neutral-400">(optional)</span></>}
+                label={
+                  <>
+                    Folder <span className="text-neutral-400">(optional)</span>
+                  </>
+                }
                 placeholder="e.g. Austin/IH35"
                 value={folder}
                 onChange={setFolder}
-                hint="Avoid line breaks; use simple paths like District/Highway."
+                hint="Use simple paths like District/Highway (no line breaks)."
               />
+
               <div className="grid gap-1">
-                <label className="text-sm font-medium">PDF file</label>
+                <label className="text-sm font-medium">PDF File</label>
                 <input
+                  ref={inputRef}
                   className="w-full rounded-lg border px-3 py-2 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-neutral-100 file:px-3 file:py-2 hover:file:bg-neutral-200 transition outline-none focus:ring-2 focus:ring-[#f36f21]/30 focus:border-[#f36f21]"
                   type="file"
                   accept="application/pdf"
@@ -162,6 +179,21 @@ export default function AdminPage() {
                 </p>
               </div>
 
+              {progress !== null && (
+                <div className="mt-1">
+                  <div className="h-2 w-full rounded-full bg-neutral-200 overflow-hidden">
+                    <div
+                      className="h-2 rounded-full transition-all"
+                      style={{
+                        width: `${Math.min(100, Math.max(0, progress))}%`,
+                        backgroundColor: "#f36f21",
+                      }}
+                    />
+                  </div>
+                  <div className="text-xs text-neutral-600 mt-1">{Math.round(progress)}%</div>
+                </div>
+              )}
+
               <button
                 onClick={upload}
                 disabled={disabled}
@@ -170,23 +202,47 @@ export default function AdminPage() {
                 onMouseEnter={(e) => (e.currentTarget.style.filter = "brightness(1.08)")}
                 onMouseLeave={(e) => (e.currentTarget.style.filter = "none")}
               >
-                Upload
+                {busy ? "Working…" : "Upload"}
               </button>
 
               <div className="min-h-[22px] text-sm text-neutral-700">{status}</div>
             </div>
-          </div>
+          </section>
 
-          <p className="text-[11px] text-neutral-400 mt-3 text-center">
-            If you see “Failed to fetch”, check S3 CORS and ensure the signed URL has no <code>%0D%0A</code>.
-          </p>
+          {/* Card: Preview & Hints */}
+          <aside className="rounded-2xl border border-neutral-200/70 bg-white/70 backdrop-blur shadow-[0_12px_30px_rgba(0,0,0,0.05)] overflow-hidden">
+            <div className="px-6 md:px-8 py-6 border-b bg-white/60">
+              <h2 className="text-lg font-semibold tracking-tight">Preview & Tips</h2>
+            </div>
+            <div className="px-6 md:px-8 py-6 grid gap-4">
+              <div className="rounded-lg border bg-white p-4">
+                <div className="text-xs text-neutral-500 mb-2">Selected file</div>
+                {file ? (
+                  <div className="text-sm">
+                    <div className="font-medium">{file.name}</div>
+                    <div className="text-neutral-500">
+                      {(file.size / (1024 * 1024)).toFixed(2)} MB • {contentType}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-neutral-500 text-sm">No file chosen.</div>
+                )}
+              </div>
+
+              <ul className="text-sm text-neutral-700 leading-6 list-disc pl-5">
+                <li>Ensure S3 CORS allows <code>PUT</code>, <code>GET</code>, and <code>HEAD</code> from your domains.</li>
+                <li>Folder/filename should not contain line breaks (<code>%0D%0A</code>).</li>
+                <li>Upload uses the same <code>Content-Type</code> for sign & PUT.</li>
+              </ul>
+            </div>
+          </aside>
         </div>
       </main>
     </div>
   );
 }
 
-/* ————— UI helpers ————— */
+/* ---------- helpers ---------- */
 
 function LabeledInput({
   label,
@@ -216,4 +272,34 @@ function LabeledInput({
       {hint ? <p className="text-[11px] text-neutral-500">{hint}</p> : null}
     </div>
   );
+}
+
+/**
+ * PUT with progress (XMLHttpRequest for reliable upload progress in the browser)
+ */
+function putWithProgress(
+  url: string,
+  blob: Blob,
+  contentType: string,
+  onProgress: (pct: number) => void
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", url);
+    xhr.setRequestHeader("Content-Type", contentType);
+
+    xhr.upload.onprogress = (evt) => {
+      if (evt.lengthComputable) {
+        const pct = (evt.loaded / evt.total) * 100;
+        onProgress(pct);
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`S3 PUT failed: ${xhr.status} ${xhr.statusText}`));
+    };
+    xhr.onerror = () => reject(new Error("Network error during S3 PUT"));
+    xhr.send(blob);
+  });
 }
