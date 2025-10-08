@@ -1,7 +1,13 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 
+/**
+ * Macias Admin — classic minimal card (like the earlier version)
+ * - Brand color: #f36f21
+ * - Soft glass background, rounded-xl, shadow, subtle hovers
+ * - Exact upload flow preserved (signed URL -> PUT to S3 -> register)
+ */
 export default function AdminPage() {
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
@@ -19,7 +25,7 @@ export default function AdminPage() {
     setStatus("");
 
     try {
-      // 1) Get signed PUT URL (must include the exact Content-Type we’ll send)
+      // 1) Signed URL
       setStatus("Requesting upload URL…");
       const upRes = await fetch("/api/files/upload-url", {
         method: "POST",
@@ -28,11 +34,7 @@ export default function AdminPage() {
           "x-user-email": email,
           "x-admin-pass": pass,
         },
-        body: JSON.stringify({
-          folder,
-          filename: file.name,
-          contentType,
-        }),
+        body: JSON.stringify({ folder, filename: file.name, contentType }),
       });
 
       if (!upRes.ok) {
@@ -40,24 +42,22 @@ export default function AdminPage() {
         setStatus(`Request failed: ${upRes.status} ${txt}`.trim());
         return;
       }
+      const { url, key } = (await upRes.json()) as { url: string; key: string };
 
-      const { url, key } = await upRes.json();
-
-      // 2) Upload file to S3 with the SAME Content-Type as signed
+      // 2) PUT to S3 with SAME content-type
       setStatus("Uploading to S3…");
       const put = await fetch(url, {
         method: "PUT",
         headers: { "Content-Type": contentType },
         body: file,
       });
-
       if (!put.ok) {
         const errText = await put.text().catch(() => "");
         setStatus(`Upload failed: ${put.status} ${errText || ""}`.trim());
         return;
       }
 
-      // 3) (Optional) register so it shows up immediately on the homepage
+      // 3) Register so it shows up right away
       setStatus("Registering metadata…");
       const meta = {
         id: crypto.randomUUID(),
@@ -89,8 +89,6 @@ export default function AdminPage() {
       }
 
       setStatus(`✅ Uploaded & registered: ${key}`);
-      // Optional: reset
-      // setFolder(""); setFile(null);
     } catch (err: any) {
       setStatus(`Error: ${err?.message || String(err)}`);
     }
@@ -99,16 +97,16 @@ export default function AdminPage() {
   const disabled = !file || !email || !pass;
 
   return (
-    <div className="min-h-screen bg-neutral-50">
-      <header className="border-b bg-white">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div className="min-h-screen bg-[radial-gradient(1000px_600px_at_50%_-20%,#ffe7d7_0%,transparent_60%),linear-gradient(180deg,#fafafa,white)]">
+      {/* Top bar accent */}
+      <div className="h-1 w-full" style={{ backgroundColor: "#f36f21" }} />
+
+      {/* Header (slim, balanced) */}
+      <header className="sticky top-0 z-10 backdrop-blur supports-[backdrop-filter]:bg-white/70 bg-white/80 border-b">
+        <div className="mx-auto max-w-5xl px-5 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img
-              src="/favicon.png"
-              alt="Macias"
-              className="h-8 w-8 rounded-lg shadow-sm"
-            />
-            <div className="font-semibold tracking-tight">Macias Admin</div>
+            <img src="/favicon.png" alt="Macias" className="h-7 w-7 rounded-md shadow-sm" />
+            <span className="text-sm font-semibold tracking-tight">Macias Admin</span>
           </div>
           <a
             href="/"
@@ -119,88 +117,103 @@ export default function AdminPage() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-6 py-10">
-        <h1 className="text-2xl font-bold">Upload Plans</h1>
-        <p className="text-sm text-neutral-500 mt-1">
-          Use your <span className="font-medium">@maciasspecialty.com</span> email and admin password.
-        </p>
+      {/* Centered card */}
+      <main className="mx-auto max-w-5xl px-5 py-10">
+        <div className="mx-auto max-w-xl">
+          <div className="group rounded-2xl border border-neutral-200/70 bg-white/80 backdrop-blur shadow-[0_10px_30px_rgba(0,0,0,0.06)] transition">
+            <div className="px-6 sm:px-8 py-6 border-b bg-white/60">
+              <h1 className="text-xl font-semibold tracking-tight">Upload Plans (PDF)</h1>
+              <p className="text-xs text-neutral-500 mt-1">
+                Sign in with your <span className="font-medium">@maciasspecialty.com</span> email and admin password.
+              </p>
+            </div>
 
-        <div className="mt-6 grid gap-4 max-w-xl">
-          <div>
-            <label className="block text-sm font-medium mb-1">Email</label>
-            <input
-              className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[#f36f21]/30 focus:border-[#f36f21] transition"
-              placeholder="lm@maciasspecialty.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Admin password</label>
-            <input
-              className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[#f36f21]/30 focus:border-[#f36f21] transition"
-              type="password"
-              placeholder="••••••"
-              value={pass}
-              onChange={(e) => setPass(e.target.value)}
-            />
-          </div>
-
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Folder (optional)
-              </label>
-              <input
-                className="w-full border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[#f36f21]/30 focus:border-[#f36f21] transition"
+            <div className="px-6 sm:px-8 py-6 grid gap-4">
+              <LabeledInput
+                label="Email"
+                placeholder="lm@maciasspecialty.com"
+                value={email}
+                onChange={setEmail}
+              />
+              <LabeledInput
+                label="Admin password"
+                placeholder="••••••"
+                type="password"
+                value={pass}
+                onChange={setPass}
+              />
+              <LabeledInput
+                label={<>Folder <span className="text-neutral-400">(optional)</span></>}
                 placeholder="e.g. Austin/IH35"
                 value={folder}
-                onChange={(e) => setFolder(e.target.value)}
+                onChange={setFolder}
+                hint="Avoid line breaks; use simple paths like District/Highway."
               />
-              <p className="text-xs text-neutral-500 mt-1">
-                Avoid line breaks; use simple path like <code>District/Highway</code>.
-              </p>
-            </div>
+              <div className="grid gap-1">
+                <label className="text-sm font-medium">PDF file</label>
+                <input
+                  className="w-full rounded-lg border px-3 py-2 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-neutral-100 file:px-3 file:py-2 hover:file:bg-neutral-200 transition outline-none focus:ring-2 focus:ring-[#f36f21]/30 focus:border-[#f36f21]"
+                  type="file"
+                  accept="application/pdf"
+                  onChange={(e) => setFile(e.target.files?.[0] || null)}
+                />
+                <p className="text-[11px] text-neutral-500">
+                  Detected type: <code>{contentType}</code>
+                </p>
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">PDF</label>
-              <input
-                className="w-full border rounded-lg px-3 py-2 file:mr-4 file:rounded-md file:border-0 file:bg-neutral-100 file:px-3 file:py-2 hover:file:bg-neutral-200 transition"
-                type="file"
-                accept="application/pdf"
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
-              />
-              <p className="text-xs text-neutral-500 mt-1">
-                Detected type: <code>{contentType}</code>
-              </p>
+              <button
+                onClick={upload}
+                disabled={disabled}
+                className="mt-2 inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition"
+                style={{ backgroundColor: "#f36f21" }}
+                onMouseEnter={(e) => (e.currentTarget.style.filter = "brightness(1.08)")}
+                onMouseLeave={(e) => (e.currentTarget.style.filter = "none")}
+              >
+                Upload
+              </button>
+
+              <div className="min-h-[22px] text-sm text-neutral-700">{status}</div>
             </div>
           </div>
 
-          <button
-            onClick={upload}
-            disabled={disabled}
-            className="group inline-flex items-center justify-center rounded-lg bg-[#f36f21] px-4 py-2 font-medium text-white shadow-sm hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition"
-          >
-            <span className="mr-1">Upload</span>
-            <svg
-              className="h-4 w-4 transform group-hover:-translate-y-0.5 transition"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path d="M3 15a1 1 0 011-1h3v-3H5l5-5 5 5h-2v3h3a1 1 0 011 1v2a1 1 0 01-1 
-                1H4a1 1 0 01-1-1v-2z" />
-            </svg>
-          </button>
-
-          <div className="min-h-[24px] text-sm text-neutral-700">{status}</div>
-
-          <div className="text-xs text-neutral-400">
-            If you see <em>Failed to fetch</em>, it’s usually CORS or a header mismatch. Make sure your S3
-            CORS is saved and the signed URL contains no <code>%0D%0A</code>.
-          </div>
+          <p className="text-[11px] text-neutral-400 mt-3 text-center">
+            If you see “Failed to fetch”, check S3 CORS and ensure the signed URL has no <code>%0D%0A</code>.
+          </p>
         </div>
       </main>
+    </div>
+  );
+}
+
+/* ————— UI helpers ————— */
+
+function LabeledInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+  hint,
+}: {
+  label: React.ReactNode;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  type?: string;
+  hint?: string;
+}) {
+  return (
+    <div className="grid gap-1">
+      <label className="text-sm font-medium">{label}</label>
+      <input
+        type={type}
+        className="w-full rounded-lg border px-3 py-2 text-sm outline-none transition focus:ring-2 focus:ring-[#f36f21]/30 focus:border-[#f36f21]"
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {hint ? <p className="text-[11px] text-neutral-500">{hint}</p> : null}
     </div>
   );
 }
