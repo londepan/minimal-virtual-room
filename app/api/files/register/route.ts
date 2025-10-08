@@ -3,13 +3,15 @@ import { s3, BUCKET } from "../../../../lib/s3";
 import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 
 function isAdmin(req: Request) {
-  const email = req.headers.get("x-user-email")?.toLowerCase() || "";
-  const pass = req.headers.get("x-admin-pass") || "";
-  const domain = process.env.ADMIN_DOMAIN || "maciasspecialty.com";
-  const okDomain = email.endsWith(`@${domain}`);
-  const okPass = !!process.env.ADMIN_PASS && pass === process.env.ADMIN_PASS;
-  return okDomain && okPass;
+  const email = (req.headers.get('x-user-email') || '').toLowerCase().trim();
+  const pass = (req.headers.get('x-admin-pass') || '').trim();
+  const allowedDomain = (process.env.ADMIN_DOMAIN || '').toLowerCase().trim();
+  const hasPass = !!process.env.ADMIN_PASS && pass === process.env.ADMIN_PASS;
+
+  const emailOk = allowedDomain && email.endsWith(`@${allowedDomain}`);
+  return emailOk && hasPass;
 }
+
 
 // Quick GET so you can test the route URL
 export async function GET() {
